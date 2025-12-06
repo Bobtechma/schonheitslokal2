@@ -1,0 +1,16 @@
+name: Trigger Review Emails
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Run every hour
+  workflow_dispatch: # Allow manual triggering from GitHub UI
+
+jobs:
+  cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Vercel Endpoint
+        run: |
+          # Replace with your actual Vercel project URL
+          curl -I https://schonheitslokal2.vercel.app/api/cron-review-emails
+          # If you don't know the exact URL, check your Vercel Dashboard

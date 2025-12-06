@@ -1,0 +1,7 @@
+{
+  "name": "Schonheitslokal - Provador",
+  "description": "Sehen Sie, wie Sie nach dem Salonbesuch aussehen werden!",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

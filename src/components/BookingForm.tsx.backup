@@ -1,0 +1,726 @@
+import { useState, useEffect, useCallback } from 'react'
+import { Calendar, Clock, User, CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react'
+import { useBookingStore } from '@/stores/bookingStore'
+import { supabase } from '@/lib/supabase'
+import type { Tables } from '@/lib/supabase'
+import { toast } from 'sonner'
+import { formatCurrency, getDurationText } from '@/lib/utils'
+import { useLocation } from 'react-router-dom'
+import { useLanguageStore } from '@/stores/languageStore'
+import { sendBookingConfirmation } from '@/lib/email'
+
+type Service = Tables<'services'>
+
+interface BookingFormProps {
+  onComplete?: (appointmentId: string) => void
+}
+
+export default function BookingForm({ onComplete }: BookingFormProps) {
+  const {
+    step,
+    setStep,
+    selectedServices,
+    setSelectedServices,
+    totalPrice,
+    totalDuration,
+    resetBooking
+  } = useBookingStore()
+
+  const [services, setServices] = useState<Service[]>([])
+  const [loading, setLoading] = useState(true)
+  const location = useLocation()
+  const { t } = useLanguageStore()
+
+  useEffect(() => {
+    fetchServices()
+    loadPromotions()
+
+    const params = new URLSearchParams(location.search)
+    const serviceId = params.get('service')
+    if (serviceId && services.length > 0) {
+      const service = services.find(s => s.id === serviceId)
+      if (service) {
+        setSelectedServices([service])
+        setStep(2)
+      }
+    }
+
+    return () => { }
+  }, [location.search])
+
+  const fetchServices = async () => {
+    try {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('services')
+        .select('*')
+        .eq('active', true)
+        .order('display_order', { ascending: true })
+
+      if (error) throw error
+      setServices(data || [])
+    } catch (error) {
+      toast.error(t('loadServicesError'))
+      console.error('Error fetching services:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadPromotions = async () => {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('key,value')
+      .or('key.eq.store_discount_pct,key.like.service_discount_pct_%')
+    if (error) return
+    type SettingRow = Pick<Tables<'system_settings'>, 'key' | 'value'>
+    const rows = (data || []) as SettingRow[]
+    const store = rows.find((r) => r.key === 'store_discount_pct')
+    const promoStorePct = store && store.value != null ? Number(store.value) : 0
+    const svcRows = rows.filter((r) => r.key.startsWith('service_discount_pct_'))
+    const promoPerService: Record<string, number> = {}
+    for (const r of svcRows) {
+      const sid = r.key.replace('service_discount_pct_', '')
+      promoPerService[sid] = r.value != null ? Number(r.value) : 0
+    }
+    useBookingStore.getState().setPromotions({ promoStorePct, promoPerService })
+  }
+
+  const handleServiceToggle = (service: Service) => {
+    const isSelected = selectedServices.some(s => s.id === service.id)
+    let newServices: Service[]
+
+    if (isSelected) {
+      newServices = selectedServices.filter(s => s.id !== service.id)
+    } else {
+      newServices = [...selectedServices, service]
+    }
+
+    setSelectedServices(newServices)
+  }
+
+  const handleNext = () => {
+    if (step === 1 && selectedServices.length === 0) {
+      toast.error(t('selectServiceError'))
+      return
+    }
+    setStep(step + 1)
+  }
+
+  const handleBack = () => {
+    setStep(step - 1)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500"></div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          {[1, 2, 3, 4].map((stepNumber) => (
+            <div key={stepNumber} className="flex items-center">
+              <div className={`flex items-center justify-center w-10 h-10 rounded-full ${step >= stepNumber
+                ? 'bg-pink-500 text-white'
+                : 'bg-gray-200 text-gray-600'
+                }`}>
+                {step > stepNumber ? <CheckCircle className="w-5 h-5" /> : stepNumber}
+              </div>
+              {stepNumber < 4 && (
+                <div className={`w-24 h-1 mx-2 ${step > stepNumber ? 'bg-pink-500' : 'bg-gray-200'}`} />
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-between mt-2 text-sm text-gray-600">
+          <span>{t('step1')}</span>
+          <span>{t('step2')}</span>
+          <span>{t('step3')}</span>
+          <span>{t('step4')}</span>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        {step === 1 && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+              <Calendar className="w-6 h-6 mr-2 text-pink-500" />
+              {t('selectServices')}
+            </h2>
+
+            {services.length === 0 ? (
+              <div className="text-center py-12">
+                <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500">{t('noServices')}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {services.map((service) => (
+                  <div
+                    key={service.id}
+                    className={`border rounded-lg p-4 cursor-pointer transition-all ${selectedServices.some(s => s.id === service.id)
+                      ? 'border-pink-500 bg-pink-50'
+                      : 'border-gray-200 hover:border-pink-300'
+                      }`}
+                    onClick={() => handleServiceToggle(service)}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-semibold text-gray-800">{service.name}</h3>
+                      <span className="text-pink-600 font-bold">
+                        {formatCurrency(applyPrice(service))}
+                      </span>
+                    </div>
+                    <p className="text-gray-600 text-sm mb-2">{service.description}</p>
+                    <div className="flex items-center text-sm text-gray-500">
+                      <Clock className="w-4 h-4 mr-1" />
+                      {getDurationText(service.duration_minutes)}
+                    </div>
+                    <div className="flex items-center text-sm text-gray-500 mt-1">
+                      <span className="bg-gray-100 px-2 py-1 rounded">{service.category}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {selectedServices.length > 0 && (
+              <div className="mt-6 p-4 bg-pink-50 rounded-lg">
+                <h4 className="font-semibold text-gray-800 mb-2">{t('bookingSummary')}</h4>
+                <div className="space-y-1">
+                  {selectedServices.map((service) => (
+                    <div key={service.id} className="flex justify-between text-sm">
+                      <span>{service.name}</span>
+                      <span>{formatCurrency(applyPrice(service))}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="border-t pt-2 mt-2">
+                  <div className="flex justify-between font-semibold">
+                    <span>{t('total')}</span>
+                    <span>{formatCurrency(totalPrice)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>{t('totalDuration')}</span>
+                    <span>{getDurationText(totalDuration)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 2 && <DateTimeSelection />}
+        {step === 3 && <ClientInfoForm />}
+        {step === 4 && <BookingConfirmation onComplete={onComplete} />}
+      </div>
+
+      <div className="flex justify-between mt-6">
+        <button
+          onClick={handleBack}
+          disabled={step === 1}
+          className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          {t('back')}
+        </button>
+
+        {step < 4 && (
+          <button
+            onClick={handleNext}
+            className="flex items-center px-6 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors"
+          >
+            {t('next')}
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DateTimeSelection() {
+  const { selectedDate, selectedTime, setSelectedDate, setSelectedTime, totalDuration } = useBookingStore()
+  const [availableTimes, setAvailableTimes] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const { t } = useLanguageStore()
+
+  const fetchAvailableTimes = useCallback(async () => {
+    if (!selectedDate) return
+
+    setLoading(true)
+    try {
+      const [year, month, day] = selectedDate.split('-').map(Number)
+      const dateObj = new Date(year, month - 1, day)
+      const dayOfWeek = dateObj.getDay()
+
+      const { data: businessHours } = await supabase
+        .from('business_hours')
+        .select('*')
+        .eq('day_of_week', dayOfWeek)
+        .single()
+
+      if (businessHours?.is_closed) {
+        setAvailableTimes([])
+        setLoading(false)
+        return
+      }
+
+      const openTime = businessHours?.open_time?.slice(0, 5) || '09:00'
+      const closeTime = businessHours?.close_time?.slice(0, 5) || '18:00'
+
+      const { data: appointments } = await supabase
+        .from('appointments')
+        .select('appointment_time, total_duration_minutes')
+        .eq('appointment_date', selectedDate)
+        .neq('status', 'cancelled')
+        .neq('status', 'no_show')
+        .order('appointment_time')
+
+      const allTimes = generateTimeSlots(openTime, closeTime, 30)
+      const availableTimes = allTimes.filter(time => {
+        const slotStart = new Date(`2000-01-01T${time}`)
+        const slotEnd = new Date(slotStart)
+        slotEnd.setMinutes(slotEnd.getMinutes() + totalDuration)
+
+        const closing = new Date(`2000-01-01T${closeTime}`)
+        if (slotEnd > closing) return false
+
+        const hasConflict = appointments?.some(apt => {
+          const aptStart = new Date(`2000-01-01T${apt.appointment_time}`)
+          const aptEnd = new Date(aptStart)
+          aptEnd.setMinutes(aptEnd.getMinutes() + apt.total_duration_minutes)
+          return (slotStart < aptEnd && slotEnd > aptStart)
+        })
+
+        return !hasConflict
+      })
+
+      setAvailableTimes(availableTimes)
+    } catch (error) {
+      console.error('Error fetching available times:', error)
+      toast.error(t('loadTimesError'))
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedDate, totalDuration, t])
+
+  useEffect(() => {
+    if (selectedDate) {
+      fetchAvailableTimes()
+    }
+  }, [selectedDate, fetchAvailableTimes])
+
+  const generateTimeSlots = (startTime: string, endTime: string, interval: number = 30): string[] => {
+    const slots: string[] = []
+    const start = new Date(`2000-01-01T${startTime}`)
+    const end = new Date(`2000-01-01T${endTime}`)
+
+    while (start < end) {
+      const timeString = start.toTimeString().slice(0, 5)
+      slots.push(timeString)
+      start.setMinutes(start.getMinutes() + interval)
+    }
+
+    return slots
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+  const nextMonth = new Date()
+  nextMonth.setMonth(nextMonth.getMonth() + 1)
+  const maxDate = nextMonth.toISOString().split('T')[0]
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+        <Clock className="w-6 h-6 mr-2 text-pink-500" />
+        {t('selectDateTitle')}
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            {t('bookingDate')}
+          </label>
+          <input
+            type="date"
+            value={selectedDate || ''}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            min={today}
+            max={maxDate}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+          />
+        </div>
+
+        {selectedDate && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {t('availableTime')}
+            </label>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div>
+              </div>
+            ) : availableTimes.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Clock className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                <p>{t('noTimesAvailable')}</p>
+                <p className="text-sm">{t('selectAnotherDate')}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {availableTimes.map((time) => (
+                  <button
+                    key={time}
+                    onClick={() => setSelectedTime(time)}
+                    className={`px-3 py-2 text-sm rounded-lg border transition-colors ${selectedTime === time
+                      ? 'bg-pink-500 text-white border-pink-500'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-pink-300'
+                      }`}
+                  >
+                    {time}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ClientInfoForm() {
+  const { clientInfo, setClientInfo, termsAccepted, setTermsAccepted } = useBookingStore()
+  const { t } = useLanguageStore()
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+        <User className="w-6 h-6 mr-2 text-pink-500" />
+        {t('personalDataTitle')}
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('fullName')}
+          </label>
+          <input
+            type="text"
+            value={clientInfo.fullName}
+            onChange={(e) => setClientInfo({ fullName: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('email')}
+          </label>
+          <input
+            type="email"
+            value={clientInfo.email}
+            onChange={(e) => setClientInfo({ email: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('phoneLabel')}
+          </label>
+          <input
+            type="tel"
+            value={clientInfo.phone}
+            onChange={(e) => setClientInfo({ phone: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('birthDate')}
+          </label>
+          <input
+            type="date"
+            value={clientInfo.birthDate}
+            onChange={(e) => setClientInfo({ birthDate: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('gender')}
+          </label>
+          <select
+            value={clientInfo.gender}
+            onChange={(e) => setClientInfo({ gender: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+          >
+            <option value="">{t('select')}</option>
+            <option value="feminino">{t('female')}</option>
+            <option value="masculino">{t('male')}</option>
+            <option value="outro">{t('other')}</option>
+            <option value="prefiro_nao_dizer">{t('preferNotToSay')}</option>
+          </select>
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('allergies')}
+          </label>
+          <textarea
+            value={clientInfo.allergies}
+            onChange={(e) => setClientInfo({ allergies: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+            rows={3}
+            placeholder={t('allergiesPlaceholder')}
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('preferences')}
+          </label>
+          <textarea
+            value={clientInfo.preferences}
+            onChange={(e) => setClientInfo({ preferences: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+            rows={3}
+            placeholder={t('preferencesPlaceholder')}
+          />
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <label className="flex items-start">
+          <input
+            type="checkbox"
+            checked={termsAccepted}
+            onChange={(e) => setTermsAccepted(e.target.checked)}
+            className="mt-1 h-4 w-4 text-pink-600 focus:ring-pink-500 border-gray-300 rounded"
+          />
+          <span className="ml-2 text-sm text-gray-600">
+            {t('termsAccept')}
+          </span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function BookingConfirmation({ onComplete }: { onComplete?: (appointmentId: string) => void }) {
+  const {
+    selectedServices,
+    selectedDate,
+    selectedTime,
+    totalPrice,
+    totalDuration,
+    clientInfo,
+    termsAccepted
+  } = useBookingStore()
+  const [loading, setLoading] = useState(false)
+  const { t, language } = useLanguageStore()
+
+  const handleConfirmBooking = async () => {
+    if (!termsAccepted) {
+      toast.error(t('termsAccept'))
+      return
+    }
+
+    setLoading(true)
+    try {
+      const sanitize = (val: string | null | undefined) => {
+        if (!val) return null
+        const trimmed = val.trim()
+        await supabase
+          .from('clients')
+          .update({
+            full_name: clientInfo.fullName,
+            phone: clientInfo.phone,
+            birth_date: sanitize(clientInfo.birthDate),
+            gender: sanitize(clientInfo.gender),
+            allergies: sanitize(clientInfo.allergies),
+            preferences: sanitize(clientInfo.preferences),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', clientId)
+      } else {
+        const { data: newClient, error: clientError } = await supabase
+          .from('clients')
+          .insert([{
+            user_id: currentUser.user?.id || null,
+            full_name: clientInfo.fullName,
+            email: clientInfo.email,
+            phone: clientInfo.phone,
+            birth_date: sanitize(clientInfo.birthDate),
+            gender: sanitize(clientInfo.gender),
+            allergies: sanitize(clientInfo.allergies),
+            preferences: sanitize(clientInfo.preferences),
+            terms_accepted: true,
+            terms_accepted_at: new Date().toISOString()
+          }])
+          .select()
+          .single()
+
+        if (clientError) throw clientError
+      clientId = newClient.id
+    }
+
+      const normalizeDate = (d: string) => d?.slice(0, 10)
+    const normalizeTime = (t: string) => (t?.length === 5 ? `${t}:00` : t)
+
+    const { data: appointment, error: appointmentError } = await supabase
+      .from('appointments')
+      .insert([{
+        client_id: clientId,
+        user_id: currentUser.user?.id || null,
+        appointment_date: normalizeDate(selectedDate!),
+        appointment_time: normalizeTime(selectedTime!),
+        total_duration_minutes: totalDuration,
+        total_price: totalPrice,
+        status: 'confirmed'
+      }])
+      .select()
+      .single()
+
+    if (appointmentError) throw appointmentError
+
+    const appointmentServices = selectedServices.map((service, index) => ({
+      appointment_id: appointment.id,
+      service_id: service.id,
+      price_at_time: applyPrice(service),
+      duration_at_time: service.duration_minutes,
+      order_index: index
+    }))
+
+    const { error: servicesError } = await supabase
+      .from('appointment_services')
+      .insert(appointmentServices)
+
+    if (servicesError) throw servicesError
+
+    const emailData = {
+      clientName: clientInfo.fullName,
+      clientEmail: clientInfo.email,
+      appointmentDate: selectedDate!,
+      appointmentTime: selectedTime!,
+      appointmentId: appointment.id,
+      services: selectedServices.map(s => ({ name: s.name, price: applyPrice(s) })),
+      totalPrice: totalPrice,
+      language: language
+    }
+
+    const emailSuccess = await sendBookingConfirmation(emailData)
+
+    if (!emailSuccess) {
+      toast.warning(t('emailError') || 'Booking confirmed, but email sending failed.')
+    }
+
+    toast.success(t('bookingSuccess'))
+    onComplete?.(appointment.id)
+
+  } catch (error) {
+    console.error('Error confirming booking:', error)
+    toast.error(t('bookingError'))
+  } finally {
+    setLoading(false)
+  }
+}
+
+return (
+  <div>
+    <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+      <CheckCircle className="w-6 h-6 mr-2 text-green-500" />
+      {t('confirmBookingTitle')}
+    </h2>
+
+    <div className="space-y-6">
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-800 mb-3">{t('bookingSummary')}</h3>
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('date')}:</span>
+            <span className="font-medium">{selectedDate && new Date(selectedDate).toLocaleDateString(t('date') === 'Data' ? 'pt-BR' : 'de-CH')}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('time')}:</span>
+            <span className="font-medium">{selectedTime}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('duration')}:</span>
+            <span className="font-medium">{getDurationText(totalDuration)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('total')}:</span>
+            <span className="font-bold text-pink-600">{formatCurrency(totalPrice)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-800 mb-3">{t('selectedServices')}</h3>
+        <ul className="space-y-1">
+          {selectedServices.map((service) => (
+            <li key={service.id} className="flex justify-between text-sm">
+              <span>{service.name}</span>
+              <span>{formatCurrency(applyPrice(service))}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-800 mb-3">{t('clientData')}</h3>
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('fullName').replace('*', '')}:</span>
+            <span className="font-medium">{clientInfo.fullName}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('email').replace('*', '')}:</span>
+            <span className="font-medium">{clientInfo.email}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">{t('phoneLabel').replace('*', '')}:</span>
+            <span className="font-medium">{clientInfo.phone}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="text-center">
+        <button
+          onClick={handleConfirmBooking}
+          disabled={loading}
+          className="px-8 py-3 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? (
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              {t('confirming')}
+            </div>
+          ) : (
+            t('confirmButton')
+          )}
+        </button>
+      </div>
+    </div>
+  </div>
+)
+}
+
+function applyPrice(service: Service) {
+  const { promoStorePct, promoPerService } = useBookingStore.getState()
+  const perSvc = promoPerService[service.id] || 0
+  const pct = Math.max(perSvc, promoStorePct)
+  return Math.max(0, Math.round(service.price * (1 - pct / 100) * 100) / 100)
+}
