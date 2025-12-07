@@ -80,22 +80,7 @@ npm install
 ### 3. Configure as variáveis de ambiente
 Copie o arquivo `.env.example` para `.env` e configure:
 
-```env
-# Supabase (obrigatório)
-VITE_SUPABASE_URL=sua_url_do_supabase
-VITE_SUPABASE_ANON_KEY=sua_chave_anon_do_supabase
 
-# Email (opcional)
-VITE_RESEND_API_KEY=sua_chave_resend
-VITE_SALON_EMAIL=contato@seusalao.com
-VITE_SALON_OWNER_EMAIL=proprietario@seusalao.com
-
-# Google Translate (opcional)
-VITE_GOOGLE_TRANSLATE_API_KEY=sua_chave_google_translate
-
-# Google OAuth (opcional)
-VITE_GOOGLE_CLIENT_ID=seu_client_id_google
-```
 
 ### 4. Configure o Supabase
 1. Crie um projeto no [Supabase](https://supabase.com)
@@ -179,8 +164,8 @@ supabase/
 ## 📞 Suporte e Contato
 
 Para suporte técnico ou dúvidas:
-- Email: suporte@seusalao.com
-- Telefone: (11) 99999-9999
+- Email: bobtechma@gmail.com
+- Telefone: (98) 987481998
 - Horário: Segunda a Sexta, 9h às 18h
 
 ## 📄 Licença
