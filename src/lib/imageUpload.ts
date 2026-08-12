@@ -1,15 +1,18 @@
 import { supabase } from './supabase'
+import { compressImage } from './imageOptimizer'
 
 export interface ImageUploadOptions {
     maxSizeMB?: number
     allowedTypes?: string[]
     bucket?: string
+    optimize?: boolean // New option to enable/disable optimization
 }
 
 const DEFAULT_OPTIONS: ImageUploadOptions = {
     maxSizeMB: 5,
     allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
-    bucket: 'carousel-images'
+    bucket: 'carousel-images',
+    optimize: true // Enable optimization by default
 }
 
 export async function uploadImage(
@@ -23,22 +26,40 @@ export async function uploadImage(
         throw new Error(`Tipo de arquivo não permitido. Use: ${opts.allowedTypes.join(', ')}`)
     }
 
-    // Validate file size
+    // Validate file size (check original size first)
     const fileSizeMB = file.size / (1024 * 1024)
     if (opts.maxSizeMB && fileSizeMB > opts.maxSizeMB) {
         throw new Error(`Arquivo muito grande. Tamanho máximo: ${opts.maxSizeMB}MB`)
     }
 
     try {
+        let fileToUpload = file;
+
+        // Optimize image if enabled
+        if (opts.optimize) {
+            try {
+                const compressedFile = await compressImage(file, {
+                    maxWidth: 1920,
+                    maxHeight: 1080,
+                    quality: 0.8,
+                    type: 'image/jpeg' // Convert to JPEG for better compression
+                });
+                fileToUpload = compressedFile;
+            } catch (optError) {
+                console.warn('Image optimization failed, uploading original file:', optError);
+                // Fallback to original file
+            }
+        }
+
         // Generate unique filename
-        const fileExt = file.name.split('.').pop()
+        const fileExt = fileToUpload.name.split('.').pop()
         const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`
         const filePath = `${fileName}`
 
         // Upload to Supabase Storage
         const { data, error } = await supabase.storage
             .from(opts.bucket!)
-            .upload(filePath, file, {
+            .upload(filePath, fileToUpload, {
                 cacheControl: '3600',
                 upsert: false
             })

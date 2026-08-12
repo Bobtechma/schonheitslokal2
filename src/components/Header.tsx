@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
+import { useLanguageStore } from '@/stores/languageStore'
 import UserProfile from '@/components/UserProfile'
 import { Menu, X, Calendar, User, LogIn } from 'lucide-react'
 
@@ -8,6 +9,7 @@ export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
   const { isAuthenticated, user } = useAuthStore()
+  const { t } = useLanguageStore()
   const location = useLocation()
 
   useEffect(() => {
@@ -30,6 +32,10 @@ export default function Header() {
     { name: 'Kontakt', href: '/#contato' },
     { name: 'Visuel IA', href: '/simulator' }
   ]
+
+  if (!isAuthenticated || (user?.role === 'partner' || user?.role === 'admin' || user?.role === 'owner')) {
+    navItems.push({ name: t('partnerArea'), href: '/parceria' })
+  }
 
   const handleNavClick = (href: string) => {
     setIsMenuOpen(false)
@@ -69,7 +75,7 @@ export default function Header() {
           >
             <picture>
               <source srcSet="/logo.svg" type="image/svg+xml" />
-              <img src="/logo.png" alt="Schönheits Lokal" className="w-10 h-10 object-contain" />
+              <img src="/logo.png" alt="Logo" width="40" height="40" className="w-10 h-10 object-contain" />
             </picture>
             <span translate="no" className={`font-bold text-lg notranslate ${isScrolled ? 'text-gray-800' : 'text-gray-800'
               }`}>
@@ -79,21 +85,36 @@ export default function Header() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-8">
-            {navItems.map((item) => (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={`font-medium transition-colors ${isActive(item.href) || (item.href.includes('#') && location.pathname === '/')
-                  ? 'text-pink-600'
-                  : isScrolled
-                    ? 'text-gray-700 hover:text-pink-600'
-                    : 'text-gray-700 hover:text-pink-600'
-                  }`}
-                onClick={() => handleNavClick(item.href)}
-              >
-                {item.name}
-              </Link>
-            ))}
+            {navItems.map((item) => {
+              const isPartnerLink = item.href === '/parceria';
+              if (isPartnerLink) {
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className="px-3.5 py-1.5 border border-pink-500 text-pink-600 rounded-full hover:bg-pink-500 hover:text-white transition-all text-sm font-semibold shadow-sm shadow-pink-500/10 hover:shadow-pink-500/20"
+                    onClick={() => handleNavClick(item.href)}
+                  >
+                    {item.name}
+                  </Link>
+                );
+              }
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  className={`font-medium transition-colors ${isActive(item.href) || (item.href.includes('#') && location.pathname === '/')
+                    ? 'text-pink-600'
+                    : isScrolled
+                      ? 'text-gray-700 hover:text-pink-600'
+                      : 'text-gray-700 hover:text-pink-600'
+                    }`}
+                  onClick={() => handleNavClick(item.href)}
+                >
+                  {item.name}
+                </Link>
+              );
+            })}
           </nav>
 
           {/* User Actions */}
@@ -122,6 +143,7 @@ export default function Header() {
 
           {/* Mobile Menu Button */}
           <button
+            aria-label="Menu"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
           >
@@ -137,19 +159,34 @@ export default function Header() {
         {isMenuOpen && (
           <div className="md:hidden bg-white rounded-lg shadow-lg mt-2 border border-gray-200">
             <nav className="flex flex-col p-4 space-y-2">
-              {navItems.map((item) => (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`px-3 py-2 rounded-lg transition-colors ${isActive(item.href) || (item.href.includes('#') && location.pathname === '/')
-                    ? 'bg-pink-50 text-pink-600 font-medium'
-                    : 'text-gray-700 hover:bg-gray-50 hover:text-pink-600'
-                    }`}
-                  onClick={() => handleNavClick(item.href)}
-                >
-                  {item.name}
-                </Link>
-              ))}
+              {navItems.map((item) => {
+                const isPartnerLink = item.href === '/parceria';
+                if (isPartnerLink) {
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      className="mx-3 my-1 px-4 py-2 border border-pink-500 text-pink-600 rounded-xl hover:bg-pink-500 hover:text-white transition-all text-sm font-semibold text-center"
+                      onClick={() => handleNavClick(item.href)}
+                    >
+                      {item.name}
+                    </Link>
+                  );
+                }
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`px-3 py-2 rounded-lg transition-colors ${isActive(item.href) || (item.href.includes('#') && location.pathname === '/')
+                      ? 'bg-pink-50 text-pink-600 font-medium'
+                      : 'text-gray-700 hover:bg-gray-50 hover:text-pink-600'
+                      }`}
+                    onClick={() => handleNavClick(item.href)}
+                  >
+                    {item.name}
+                  </Link>
+                );
+              })}
 
               <div className="border-t border-gray-200 pt-4 mt-4">
                 {isAuthenticated ? (

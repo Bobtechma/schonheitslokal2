@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -12,15 +12,19 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Beauty Salon Color Palette based on schoenheitslokal.ch */
-  --salon-pink: #FFB6C1;
-  --salon-rose: #FF69B4;
-  --salon-gold: #FFD700;
-  --salon-champagne: #F7E7CE;
-  --salon-cream: #FFF8DC;
-  --salon-white: #FFFFFF;
-  --salon-gray: #6B7280;
-  --salon-dark: #374151;
+  /* Premium Beauty Salon Color Palette */
+  --salon-pink: #fdf2f4;
+  --salon-rose: #ec4899;
+  --salon-gold: #d4af37;
+  --salon-champagne: #fef9c3;
+  --salon-cream: #fffcf0;
+  --salon-white: #ffffff;
+  --salon-gray: #64748b;
+  --salon-dark: #1e293b;
+}
+
+.font-serif {
+  font-family: 'Playfair Display', serif;
 }
 
 /* Custom scrollbar */
@@ -72,6 +76,21 @@
   }
 }
 
+@keyframes upselling-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0.4);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 20px rgba(236, 72, 153, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(236, 72, 153, 0);
+  }
+}
+
 .animate-fadeInUp {
   animation: fadeInUp 0.6s ease-out;
 }
@@ -82,6 +101,10 @@
 
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-upselling-pulse {
+  animation: upselling-pulse 2s infinite;
 }
 
 /* Gradient backgrounds */
@@ -205,6 +228,19 @@ body {
 
 a, button, [role="button"], .cursor-pointer {
   cursor: pointer;
+}
+
+/* Accessibility: focus-visible */
+a:focus-visible, button:focus-visible, [role="button"]:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid var(--salon-rose);
+  outline-offset: 2px;
+  border-radius: 4px; /* Basic fallback radius */
+}
+
+/* Base styles for interactive elements (preserve their specific border radius if needed through classes) */
+.btn-salon:focus-visible, .btn-salon-outline:focus-visible {
+  outline-offset: 4px;
+  border-radius: 9999px; /* Match pill shape */
 }
 
 input, textarea {

@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /cliente/
+Disallow: /meus-agendamentos
+Disallow: /perfil
+
+Sitemap: https://schoenheitslokal.ch/sitemap.xml

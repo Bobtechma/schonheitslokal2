@@ -1,7 +1,49 @@
 {
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.schoenheitslokal.ch"
+        }
+      ],
+      "destination": "https://schoenheitslokal.ch/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/galerie/:path*",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/kommentare/:path*",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/service--preise/:path*",
+      "destination": "/agendar",
+      "permanent": true
+    },
+    {
+      "source": "/contato/:path*",
+      "destination": "/agendar",
+      "permanent": true
+    },
+    {
+      "source": "/inicio/:path*",
+      "destination": "/",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
@@ -9,6 +51,21 @@
     {
       "path": "/api/cron-review-emails",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron-birthday",
+      "schedule": "0 10 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*).(jpg|jpeg|png|svg|webp|avif|gif|ico|woff|woff2|ttf|css|js)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     }
   ]
 }

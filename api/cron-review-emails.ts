@@ -6,17 +6,12 @@ export default async function handler(
     request: VercelRequest,
     response: VercelResponse
 ) {
-    // Basic security check for Vercel Cron or specific header
-    // Ideally, check for process.env.CRON_SECRET if configured in Vercel
-    // const authHeader = request.headers.authorization;
-    // if (request.query.key !== process.env.CRON_SECRET) { ... }
-
-    // For now, allowing execution to ensure it works
-
     const supabaseUrl = process.env.VITE_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const smtpUser = process.env.VITE_SMTP_USER;
     const smtpPass = process.env.VITE_SMTP_PASS;
+    const wpApiUrl = process.env.VITE_WHATSAPP_API_URL;
+    const wpApiToken = process.env.VITE_WHATSAPP_API_TOKEN;
 
     if (!supabaseUrl || !serviceRoleKey || !smtpUser || !smtpPass) {
         return response.status(500).json({ error: 'Server configuration error' });
@@ -26,22 +21,19 @@ export default async function handler(
 
     try {
         // 0. Fetch delay setting
-        const { data: settings } = await supabase
+        const { data: settingRow } = await supabase
             .from('system_settings')
-            .select('review_email_delay')
-            .single();
+            .select('value')
+            .eq('key', 'review_email_delay')
+            .maybeSingle();
 
-        const delayHours = settings?.review_email_delay || 2;
+        let delayHours = 2;
+        if (settingRow && settingRow.value) {
+            delayHours = Number(settingRow.value);
+        }
 
-        // 1. Calculate cutoff time (dynamic delay)
-        const cutoffTime = new Date(Date.now() - delayHours * 60 * 60 * 1000);
-
-        // 2. Fetch eligible appointments
-        // Status confirmed, review not sent, older than 2 hours (approx logic)
-        // We need to filter by date/time in JS or complex query
-        // Let's get 'confirmed' appointments where review_email_sent is false
-        // We will filter strictly by time in code to be safe with timezones
-
+        // 1. Fetch eligible appointments
+        // Status 'confirmed' or 'completed', review not yet sent
         const { data: appointments, error: fetchError } = await supabase
             .from('appointments')
             .select(`
@@ -49,17 +41,16 @@ export default async function handler(
                 appointment_date,
                 appointment_time,
                 total_duration_minutes,
-                client:clients(full_name, email)
+                client:clients(full_name, email, phone)
             `)
-            .eq('status', 'confirmed') // Or 'completed' if you manually mark them
+            .in('status', ['confirmed', 'completed'])
             .eq('review_email_sent', false)
-            .neq('client.email', null) // Ensure client has email
-            .limit(100); // Process in batches (increased for daily cron)
+            .limit(100);
 
         if (fetchError) throw fetchError;
 
         if (!appointments || appointments.length === 0) {
-            return response.status(200).json({ message: 'No eligible appointments found' });
+            return response.status(200).json({ message: 'No eligible appointments found', processed: 0 });
         }
 
         const transporter = nodemailer.createTransport({
@@ -70,37 +61,44 @@ export default async function handler(
             },
         });
 
-        const reviewLink = "https://www.google.com/search?hl=pt-BR&gl=br&q=SCH%C3%96NHEITS+LOKAL,+Kalkbreitestrasse+129,+8003+Z%C3%BCrich,+Su%C3%AD%C3%A7a&ludocid=6949607348882687054&lsig=AB86z5UT8JPNffsFXNTBULEJ6a7n#lrd=0x47900ba66e443055:0x6071f7102e98c44e,3";
+        const reviewLink = "https://g.page/r/CU7EmC4Q93FgEAE/review";
 
-        const results = [];
+        const results: Array<{ id: string; sent: boolean; reason?: string }> = [];
 
         for (const apt of appointments) {
-            // Check if 2 hours have passed since the END of the appointment
-            // date + time + duration < cutoffTime
+            try {
+                // Parse appointment end time + delay
+                const startDateTimeStr = `${apt.appointment_date}T${apt.appointment_time}`;
+                const startDate = new Date(startDateTimeStr);
+                const endDate = new Date(startDate.getTime() + apt.total_duration_minutes * 60000);
+                const mailTriggerTime = new Date(endDate.getTime() + delayHours * 60 * 60 * 1000);
 
-            // apt.appointment_date is YYYY-MM-DD
-            // apt.appointment_time is HH:MM:SS
-            const startDateTimeStr = `${apt.appointment_date}T${apt.appointment_time}`;
-            const startDate = new Date(startDateTimeStr);
+                // Only send if current time is AFTER the trigger time
+                if (new Date() <= mailTriggerTime) {
+                    continue; // Not time yet
+                }
 
-            // Add duration to get end time
-            const endDate = new Date(startDate.getTime() + apt.total_duration_minutes * 60000);
-
-            // Add 2 hours buffer
-            const mailTriggerTime = new Date(endDate.getTime() + 2 * 60 * 60 * 1000);
-
-            // If current time is AFTER the trigger time, send email
-            if (new Date() > mailTriggerTime) {
-                // Supabase join returns an object for single relation if setup correctly, but TS might see it as array
-                // or if it's an array, take first element
+                // Extract client data (Supabase join can return object or array)
                 const clientData = Array.isArray(apt.client) ? apt.client[0] : apt.client;
 
-                if (!clientData) continue;
+                if (!clientData) {
+                    // Mark as sent so we don't retry endlessly
+                    await supabase.from('appointments').update({ review_email_sent: true }).eq('id', apt.id);
+                    results.push({ id: apt.id, sent: false, reason: 'No client data' });
+                    continue;
+                }
 
-                const clientName = clientData.full_name || 'Kunde';
                 const clientEmail = clientData.email;
+                const clientName = clientData.full_name || 'Kunde';
+                const clientPhone = clientData.phone;
 
-                if (!clientEmail) continue;
+                // Skip if no email, or dummy/temp email
+                if (!clientEmail || clientEmail.endsWith('@temp.com') || clientEmail.startsWith('walkin_')) {
+                    // Mark as sent so we don't retry forever
+                    await supabase.from('appointments').update({ review_email_sent: true }).eq('id', apt.id);
+                    results.push({ id: apt.id, sent: false, reason: 'Invalid or temp email' });
+                    continue;
+                }
 
                 // Send Email
                 await transporter.sendMail({
@@ -124,6 +122,31 @@ export default async function handler(
                     `
                 });
 
+                // Queue WhatsApp if phone exists
+                if (clientPhone) {
+                    try {
+                        const phoneClean = clientPhone.replace(/\D/g, '');
+                        const wpText = `Hallo *${clientName}*! 👋\n\n` +
+                            `Wir hoffen, Sie hatten eine tolle Erfahrung im *Schönheitslokal*. 😍\n\n` +
+                            `Könnten Sie uns helfen, indem Sie unseren Service bewerten? Es dauert nur eine Minute!\n` +
+                            `👉 ${reviewLink}\n\n` +
+                            `Ihre Meinung ist uns sehr wichtig. Vielen Dank! ✨`;
+
+                        // Insert into the queue
+                        await supabase
+                            .from('whatsapp_queue')
+                            .insert([
+                                { 
+                                    number: phoneClean, 
+                                    message: wpText,
+                                    status: 'pending'
+                                }
+                            ]);
+                    } catch (wpError) {
+                        console.error(`Failed to queue WhatsApp review for appointment ${apt.id}:`, wpError);
+                    }
+                }
+
                 // Mark as sent
                 await supabase
                     .from('appointments')
@@ -131,12 +154,19 @@ export default async function handler(
                     .eq('id', apt.id);
 
                 results.push({ id: apt.id, sent: true });
+
+            } catch (emailError) {
+                // Log error but continue processing other appointments
+                console.error(`Failed to send review email for appointment ${apt.id}:`, emailError);
+                results.push({ id: apt.id, sent: false, reason: (emailError as any).message });
+                // Don't mark as sent so we can retry next time
             }
         }
 
         return response.status(200).json({
             success: true,
-            processed: results.length,
+            processed: results.filter(r => r.sent).length,
+            skipped: results.filter(r => !r.sent).length,
             results
         });
 

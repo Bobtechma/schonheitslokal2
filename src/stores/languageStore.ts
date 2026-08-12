@@ -19,7 +19,7 @@ export const useLanguageStore = create<LanguageState>()(
             },
         }),
         {
-            name: 'language-storage',
+            name: 'language-storage-v2',
         }
     )
 )

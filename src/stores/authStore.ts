@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 export interface User {
   id: string
   email: string
-  role: 'client' | 'admin' | 'owner'
+  role: 'client' | 'admin' | 'owner' | 'partner'
   user_metadata?: {
     full_name?: string
     avatar_url?: string
@@ -174,15 +174,35 @@ export const useAuthStore = create<AuthState & AuthActions>()(
         },
 
         checkSession: async () => {
-          set({ isLoading: true })
-
           try {
             const { data: { session }, error } = await supabase.auth.getSession()
 
             if (error) throw error
 
             if (session?.user) {
-              // Get role from app_metadata first, fallback to user_metadata, then default to 'client'
+              // Check if session is expired or close to expiring (less than 5 minutes)
+              const now = Math.floor(Date.now() / 1000)
+              const expiresAt = session.expires_at || 0
+              if (expiresAt - now < 300) {
+                console.log('Session close to expiry, refreshing...')
+                const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+                if (refreshError) throw refreshError
+                if (refreshData.session) {
+                  const role = (refreshData.session.user.app_metadata?.role as User['role']) ||
+                    (refreshData.session.user.user_metadata?.role as User['role']) ||
+                    'client'
+
+                  const user: User = {
+                    id: refreshData.session.user.id,
+                    email: refreshData.session.user.email!,
+                    role,
+                    user_metadata: refreshData.session.user.user_metadata
+                  }
+                  set({ user, isAuthenticated: true, isLoading: false })
+                  return
+                }
+              }
+
               const role = (session.user.app_metadata?.role as User['role']) ||
                 (session.user.user_metadata?.role as User['role']) ||
                 'client'
@@ -197,9 +217,28 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             } else {
               set({ user: null, isAuthenticated: false, isLoading: false })
             }
-          } catch (error) {
+          } catch (error: any) {
+            console.error('Check session error:', error)
+            
+            // Se for erro de token de atualização inválido, precisamos limpar o estado local
+            // para evitar que o app fique travado em um loop de erro 400
+            const isRefreshTokenError = 
+              error?.message?.includes('refresh_token_not_found') || 
+              error?.message?.includes('Invalid Refresh Token') ||
+              error?.status === 400;
+
+            if (isRefreshTokenError) {
+              console.warn('Refresh token inválido, limpando sessão local...');
+              // Usamos scope: local para limpar apenas o armazenamento local sem tentar 
+              // contatar o servidor (que falharia com 400)
+              await supabase.auth.signOut({ scope: 'local' });
+            }
+
             set({
-              error: error instanceof Error ? error.message : 'Erro ao verificar sessão',
+              user: null,
+              isAuthenticated: false,
+              // Não mostramos erro se for apenas token expirado/inválido para não assustar o usuário
+              error: isRefreshTokenError ? null : (error instanceof Error ? error.message : 'Erro ao verificar sessão'),
               isLoading: false
             })
           }
@@ -224,9 +263,22 @@ export const useAuthStore = create<AuthState & AuthActions>()(
             } else {
               set({ user: null, isAuthenticated: false, isLoading: false })
             }
-          } catch (error) {
+          } catch (error: any) {
+            console.error('Refresh session error:', error)
+            
+            const isRefreshTokenError = 
+              error?.message?.includes('refresh_token_not_found') || 
+              error?.message?.includes('Invalid Refresh Token') ||
+              error?.status === 400;
+
+            if (isRefreshTokenError) {
+              await supabase.auth.signOut({ scope: 'local' });
+            }
+
             set({
-              error: error instanceof Error ? error.message : 'Erro ao atualizar sessão',
+              user: null,
+              isAuthenticated: false,
+              error: isRefreshTokenError ? null : (error instanceof Error ? error.message : 'Erro ao atualizar sessão'),
               isLoading: false
             })
           }

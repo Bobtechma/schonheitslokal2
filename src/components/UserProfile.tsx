@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { useAuthStore } from '@/stores/authStore'
+import { useLanguageStore } from '@/stores/languageStore'
 import { User, LogOut, Settings, Calendar, UserCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
 export default function UserProfile() {
   const { user, signOut } = useAuthStore()
+  const { t } = useLanguageStore()
   const [isOpen, setIsOpen] = useState(false)
 
   const handleLogout = async () => {
@@ -27,6 +29,8 @@ export default function UserProfile() {
         return 'Administrator'
       case 'owner':
         return 'Besitzer'
+      case 'partner':
+        return t('partnerRole')
       default:
         return 'Kunde'
     }
@@ -37,7 +41,9 @@ export default function UserProfile() {
       case 'admin':
         return 'bg-red-100 text-red-800'
       case 'owner':
-        return 'bg-purple-100 text-purple-800'
+        return 'bg-pink-100 text-pink-800' // Banned purple/indigo, using pink instead
+      case 'partner':
+        return 'bg-emerald-100 text-emerald-800'
       default:
         return 'bg-blue-100 text-blue-800'
     }
@@ -109,6 +115,17 @@ export default function UserProfile() {
                 >
                   <Settings className="w-4 h-4 mr-3" />
                   Einstellungen
+                </Link>
+              )}
+
+              {(user.role === 'partner' || user.role === 'admin' || user.role === 'owner') && (
+                <Link
+                  to="/parceria"
+                  className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <Settings className="w-4 h-4 mr-3" />
+                  {t('partnerArea')}
                 </Link>
               )}
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { CheckCircle, Calendar, Clock, MapPin, Phone, Home } from 'lucide-react'
+import { CheckCircle, Calendar, Clock, MapPin, Phone, Home, CreditCard, Wallet } from 'lucide-react'
 import { formatCurrency, formatDate, formatTime, getDurationText } from '@/lib/utils'
 import { useBookingStore } from '@/stores/bookingStore'
 import { useLanguageStore } from '@/stores/languageStore'
@@ -19,6 +19,7 @@ interface AppointmentDetails {
     email: string
     phone: string
   }
+  payment_method: string
   services: (Service & { price_at_time: number })[]
 }
 
@@ -31,8 +32,64 @@ export default function ConfirmationPage() {
   const params = useParams()
   const { t } = useLanguageStore()
 
+  // Partner Order success handling
+  const [partnerSessionId] = useState(() => {
+    return new URLSearchParams(location.search).get('partner_session_id')
+  })
+  const [partnerOrder, setPartnerOrder] = useState<any | null>(null)
+  const [partnerConfirming, setPartnerConfirming] = useState(false)
+  const [partnerError, setPartnerError] = useState<string | null>(null)
+
   // ID can come from state (after immediate booking) or URL params (QR code link)
   const appointmentId = location.state?.appointmentId || params.id
+
+  useEffect(() => {
+    if (partnerSessionId) {
+      confirmPartnerOrder()
+    }
+  }, [partnerSessionId])
+
+  const confirmPartnerOrder = async () => {
+    setPartnerConfirming(true)
+    setPartnerError(null)
+    try {
+      // 1. Confirm session with backend
+      const res = await fetch('/api/confirm-partner-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: partnerSessionId })
+      })
+
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Erro ao confirmar pagamento')
+      }
+
+      // 2. Fetch order details from Supabase
+      const { data: order, error } = await supabase
+        .from('partner_orders')
+        .select(`
+          *,
+          items:partner_order_items(
+            quantity,
+            price_at_time,
+            product:services(*)
+          )
+        `)
+        .or(`stripe_session_id_first.eq.${partnerSessionId},stripe_session_id_second.eq.${partnerSessionId}`)
+        .maybeSingle()
+
+      if (error) throw error
+      if (!order) throw new Error('Pedido não encontrado')
+
+      setPartnerOrder(order)
+    } catch (err: any) {
+      console.error(err)
+      setPartnerError(err.message || 'Erro de processamento')
+    } finally {
+      setPartnerConfirming(false)
+    }
+  }
 
   useEffect(() => {
     // Only fetch if we have an ID but no store data (or if we're accessing via direct link)
@@ -90,6 +147,7 @@ export default function ConfirmationPage() {
         total_duration_minutes: appointment.total_duration_minutes,
         total_price: appointment.total_price,
         client: appointment.client,
+        payment_method: appointment.payment_method,
         services: services
       })
     } catch (error) {
@@ -105,6 +163,7 @@ export default function ConfirmationPage() {
     time: fetchedAppointment.appointment_time.slice(0, 5),
     duration: fetchedAppointment.total_duration_minutes,
     price: fetchedAppointment.total_price,
+    paymentMethod: fetchedAppointment.payment_method,
     services: fetchedAppointment.services,
     client: fetchedAppointment.client
   } : (selectedDate && selectedTime) ? {
@@ -117,8 +176,183 @@ export default function ConfirmationPage() {
       full_name: clientInfo.fullName,
       email: clientInfo.email,
       phone: clientInfo.phone
-    }
+    },
+    paymentMethod: useBookingStore.getState().paymentMethod
   } : null
+
+  if (partnerSessionId) {
+    if (partnerConfirming) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 flex flex-col items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mb-4"></div>
+          <p className="text-gray-700 font-medium">{t('confirming') || 'Confirmando pagamento...'}</p>
+        </div>
+      )
+    }
+
+    if (partnerError) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 flex items-center justify-center">
+          <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center border border-gray-200">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl text-red-600 font-bold">!</span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">
+              {t('error') || 'Erro na Confirmação'}
+            </h1>
+            <p className="text-gray-600 mb-6">{partnerError}</p>
+            <button
+              onClick={confirmPartnerOrder}
+              className="px-6 py-3 bg-pink-500 text-white rounded-lg hover:bg-pink-600 transition-colors w-full font-medium shadow-md hover:shadow-lg transition-transform transform active:scale-95"
+            >
+              {t('confirm') || 'Tentar Novamente'}
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    if (partnerOrder) {
+      const isSecondPayment = partnerOrder.stripe_session_id_second === partnerSessionId
+      const lang = useLanguageStore.getState().language
+      const isPt = lang === 'pt-BR'
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-pink-50 to-rose-100 py-12 px-4">
+          <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden transform transition-all duration-300 hover:shadow-2xl">
+            {/* Header banner */}
+            <div className="bg-gradient-to-r from-pink-500 to-rose-500 p-8 text-center text-white relative">
+              <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4 border border-white/30">
+                <CheckCircle className="w-10 h-10 text-white" />
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight">
+                {isPt ? 'Pedido Confirmado!' : 'Bestellbestätigung'}
+              </h1>
+              <p className="text-white/85 mt-1 font-medium">
+                {isPt ? 'Área de Parceiros Schönheits Lokal' : 'Partnerbereich Schönheits Lokal'}
+              </p>
+            </div>
+
+            <div className="p-8 space-y-6">
+              {/* Order ID & Status */}
+              <div className="flex justify-between items-center pb-4 border-b border-gray-100">
+                <div>
+                  <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">{t('orderId') || 'Número do Pedido'}</p>
+                  <p className="text-lg font-bold text-gray-800">#{partnerOrder.id.slice(0, 8)}</p>
+                </div>
+                <span className={`px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                  isSecondPayment 
+                    ? 'bg-emerald-100 text-emerald-800' 
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {isSecondPayment 
+                    ? (isPt ? 'Totalmente Pago' : 'Vollständig bezahlt')
+                    : (isPt ? 'Primeira Parcela Paga' : 'Anzahlung bezahlt')}
+                </span>
+              </div>
+
+              {/* Items list */}
+              <div>
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">
+                  {t('selectedProducts') || 'Produtos Selecionados'}
+                </h3>
+                <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden bg-gray-50/50">
+                  {partnerOrder.items?.map((item: any, idx: number) => {
+                    const name = isPt 
+                      ? (item.product?.name_pt || item.product?.name)
+                      : (item.product?.name_de || item.product?.name)
+                    return (
+                      <div key={idx} className="flex justify-between items-center p-4">
+                        <div>
+                          <p className="font-semibold text-gray-800">{name}</p>
+                          <p className="text-xs text-gray-500">
+                            {isPt ? 'Qtd' : 'Menge'}: {item.quantity} × {formatCurrency(item.price_at_time)}
+                          </p>
+                        </div>
+                        <p className="font-bold text-gray-900">
+                          {formatCurrency(Number(item.price_at_time) * item.quantity)}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Pricing breakdown */}
+              <div className="bg-gray-50 rounded-2xl p-6 space-y-3">
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Subtotal</span>
+                  <span>{formatCurrency(partnerOrder.original_total)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-emerald-600 font-medium">
+                  <span>{t('partnerDiscount') || 'Desconto de Parceiro'} ({partnerOrder.discount_pct}%)</span>
+                  <span>-{formatCurrency(Number(partnerOrder.original_total) - Number(partnerOrder.discounted_total))}</span>
+                </div>
+                <div className="flex justify-between text-base font-bold text-gray-800 pt-2 border-t border-gray-200">
+                  <span>Total com Desconto</span>
+                  <span>{formatCurrency(partnerOrder.discounted_total)}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mt-6 pt-4 border-t border-gray-200">
+                  <div className="bg-white p-3 rounded-lg border border-gray-100">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">
+                      {isPt ? '1ª Parcela (50% Entrada)' : '1. Rate (50% Anzahlung)'}
+                    </p>
+                    <p className="text-lg font-bold text-pink-600 mt-1">
+                      {formatCurrency(partnerOrder.amount_upfront)}
+                    </p>
+                    <span className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">
+                      {isPt ? '✓ Pago' : '✓ Bezahlt'}
+                    </span>
+                  </div>
+                  <div className="bg-white p-3 rounded-lg border border-gray-100">
+                    <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">
+                      {isPt ? '2ª Parcela (30 Dias)' : '2. Rate (In 30 Tagen)'}
+                    </p>
+                    <p className="text-lg font-bold text-gray-800 mt-1">
+                      {formatCurrency(partnerOrder.amount_due_30_days)}
+                    </p>
+                    <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                      isSecondPayment ? 'text-emerald-600' : 'text-amber-500'
+                    }`}>
+                      {isSecondPayment 
+                        ? (isPt ? '✓ Pago' : '✓ Bezahlt')
+                        : (isPt ? '• Aguardando' : '• Ausstehend')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informational Footer */}
+              {!isSecondPayment && (
+                <div className="bg-pink-50/50 border border-pink-100 rounded-xl p-4 text-xs text-pink-800 leading-relaxed">
+                  <p className="font-bold mb-1">
+                    {isPt ? 'Segunda Parcela (50%) em 30 Dias' : 'Zweite Rate (50%) in 30 Tagen'}
+                  </p>
+                  <p>
+                    {isPt 
+                      ? 'Enviamos uma confirmação para seu e-mail contendo um link permanente de pagamento do saldo. Você poderá liquidar os 50% restantes a qualquer momento nos próximos 30 dias.' 
+                      : 'Wir haben Ihnen eine Bestätigungs-E-Mail mit einem Zahlungslink für den Restbetrag gesendet. Sie können die restlichen 50% jederzeit innerhalb der nächsten 30 Tage bezahlen.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="pt-4">
+                <Link
+                  to="/"
+                  className="flex items-center justify-center px-6 py-3 bg-pink-500 text-white rounded-xl hover:bg-pink-600 font-semibold shadow-md hover:shadow-lg transition-transform transform active:scale-95 w-full text-center"
+                >
+                  <Home className="w-5 h-5 mr-2" />
+                  {t('backToHome') || 'Voltar para o Início'}
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )
+    }
+  }
 
   if (loading) {
     return (
@@ -267,6 +501,21 @@ export default function ConfirmationPage() {
                       </p>
                     </div>
                   </div>
+                
+                {/* Payment Method */}
+                <div className="flex items-center p-4 bg-gray-50 rounded-lg">
+                  <div className="w-6 h-6 text-pink-500 mr-3 flex items-center justify-center">
+                    {displayData.paymentMethod === 'credit_card' ? <CreditCard className="w-6 h-6" /> : <Wallet className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">{t('paymentMethod' as any) || 'Método de Pagamento'}</p>
+                    <p className="font-semibold text-gray-800">
+                      {displayData.paymentMethod === 'credit_card' ? 
+                        (t('payOnline' as any) || 'Pagar Online') : 
+                        (t('paymentSalon' as any) || 'Pagar no Salão')}
+                    </p>
+                  </div>
+                </div>
                 </div>
 
                 {/* Services */}
@@ -326,7 +575,7 @@ export default function ConfirmationPage() {
                 <MapPin className="w-5 h-5 text-pink-500 mr-3" />
                 <div>
                   <p className="text-sm text-gray-600">{t('address') || 'Endereço'}</p>
-                  <p className="font-medium">Sternenstrasse 21, 8002 Zürich</p>
+                  <p className="font-medium">Kalkbreitstrasse 129, 8003 Zurich</p>
                 </div>
               </div>
             </div>

@@ -1,8 +1,24 @@
+import { useEffect } from 'react'
 import Header from '@/components/Header'
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useLanguageStore } from '@/stores/languageStore'
+import { updateMetaTags } from '@/lib/seo'
 
 export default function TermsPage() {
+    const { language } = useLanguageStore()
+
+    useEffect(() => {
+        const title = language === 'pt-BR' 
+            ? 'Termos e Condições Gerais (AGB) | Schönheits Lokal' 
+            : 'Allgemeine Geschäftsbedingungen (AGB) | Schönheits Lokal';
+        const description = language === 'pt-BR'
+            ? 'Termos e condições gerais de serviço (AGB) do Schönheits Lokal. Saiba mais sobre as nossas políticas de agendamento, cancelamento e pagamento em Zurique.'
+            : 'Allgemeine Geschäftsbedingungen (AGB) von Schönheits Lokal. Erfahren Sie mehr über unsere Termin-, Stornierungs- und Zahlungsbedingungen in Zürich.';
+        
+        updateMetaTags(title, description, '/termos', language);
+    }, [language]);
+
     return (
         <div className="min-h-screen bg-gray-50">
             <Header />
@@ -75,7 +91,7 @@ export default function TermsPage() {
                         <section>
                             <h2 className="text-xl font-semibold text-gray-800 mb-3">7. Gerichtsstand</h2>
                             <p>
-                                Es gilt schweizerisches Recht. Gerichtsstand ist Zürich.
+                                Es gilt schweizerisches Recht. Gerichtsstand ist Zurich.
                             </p>
                         </section>
 

@@ -26,6 +26,8 @@ export default async function handler(
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const smtpUser = process.env.VITE_SMTP_USER;
     const smtpPass = process.env.VITE_SMTP_PASS;
+    const wpApiUrl = process.env.VITE_WHATSAPP_API_URL;
+    const wpApiToken = process.env.VITE_WHATSAPP_API_TOKEN;
 
     if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey || !smtpUser || !smtpPass) {
         return response.status(500).json({ error: 'Server configuration error' });
@@ -54,7 +56,7 @@ export default async function handler(
             .from('appointments')
             .select(`
                 id,
-                client:clients(full_name, email)
+                client:clients(full_name, email, phone)
             `)
             .eq('id', appointmentId)
             .single();
@@ -72,7 +74,8 @@ export default async function handler(
 
         const clientName = clientData.full_name || 'Kunde';
         const clientEmail = clientData.email;
-        const reviewLink = "https://www.google.com/search?hl=pt-BR&gl=br&q=SCH%C3%96NHEITS+LOKAL,+Kalkbreitestrasse+129,+8003+Z%C3%BCrich,+Su%C3%AD%C3%A7a&ludocid=6949607348882687054&lsig=AB86z5UT8JPNffsFXNTBULEJ6a7n#lrd=0x47900ba66e443055:0x6071f7102e98c44e,3";
+        const clientPhone = clientData.phone;
+        const reviewLink = "https://g.page/r/CU7EmC4Q93FgEAE/review";
 
         // 3. Send Email
         const transporter = nodemailer.createTransport({
@@ -103,6 +106,38 @@ export default async function handler(
                 </div>
             `
         });
+
+        if (wpApiUrl && clientPhone) {
+            try {
+                const phoneClean = clientPhone.replace(/\D/g, '');
+                const wpText = `Hallo *${clientName}*! 👋\n\n` +
+                    `Wir hoffen, Sie hatten eine tolle Erfahrung im *Schönheitslokal*. 😍\n\n` +
+                    `Könnten Sie uns helfen, indem Sie unseren Service bewerten? Es dauert nur eine Minute!\n` +
+                    `👉 ${reviewLink}\n\n` +
+                    `Ihre Meinung ist uns sehr wichtig. Vielen Dank! ✨`;
+
+                const payload = {
+                    number: phoneClean,
+                    options: { delay: 1200, presence: 'composing' },
+                    textMessage: { text: wpText },
+                    text: wpText,
+                    message: wpText,
+                    phone: phoneClean
+                };
+
+                await fetch(wpApiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': wpApiToken || '',
+                        'Authorization': `Bearer ${wpApiToken || ''}`,
+                    },
+                    body: JSON.stringify(payload)
+                });
+            } catch (wpError) {
+                console.error('Error sending WhatsApp manual review:', wpError);
+            }
+        }
 
         // 4. Update status
         await supabaseAdmin

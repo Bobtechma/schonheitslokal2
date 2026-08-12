@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { CarouselContent } from './CarouselContent'
 
 interface CarouselItem {
     id: string
@@ -45,6 +46,21 @@ export default function ProductCarousel({ autoPlayInterval = 5000, showIndicator
 
             if (error) throw error
             setItems(data || [])
+
+            // Preload the first image for LCP optimization
+            if (data && data.length > 0 && data[0].image_url) {
+                const firstImageUrl = `${data[0].image_url}?width=1200&quality=80`.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
+                let preloadLink = document.getElementById('lcp-preload') as HTMLLinkElement;
+                if (!preloadLink) {
+                    preloadLink = document.createElement('link');
+                    preloadLink.id = 'lcp-preload';
+                    preloadLink.rel = 'preload';
+                    preloadLink.as = 'image';
+                    document.head.appendChild(preloadLink);
+                }
+                preloadLink.href = firstImageUrl;
+                preloadLink.fetchPriority = 'high';
+            }
         } catch (error) {
             console.error('Error fetching carousel items:', error)
         } finally {
@@ -66,7 +82,9 @@ export default function ProductCarousel({ autoPlayInterval = 5000, showIndicator
 
     if (loading) {
         return (
-            <div className="w-full h-96 bg-gray-100 animate-pulse rounded-lg"></div>
+            <div className="w-full aspect-[4/3] md:aspect-video lg:aspect-[2/1] bg-gray-100 animate-pulse rounded-lg shadow-inner flex items-center justify-center border border-pink-100 bg-pink-50/50">
+                <div className="text-gray-300 font-medium">Lade Angebote...</div>
+            </div>
         )
     }
 
@@ -77,60 +95,22 @@ export default function ProductCarousel({ autoPlayInterval = 5000, showIndicator
 
 
     return (
-        <div className="relative w-full h-96 md:h-[500px] lg:h-[600px] rounded-lg overflow-hidden shadow-2xl group">
+        <div className="relative w-full aspect-[4/3] md:aspect-video lg:aspect-[2/1] rounded-lg overflow-hidden shadow-2xl group border border-pink-100 bg-pink-50/50">
             {/* Carousel Track */}
             <div
                 className="flex h-full transition-transform duration-500 ease-out"
                 style={{ transform: `translateX(-${currentIndex * 100}%)` }}
             >
-                {items.map((item) => (
+                {items.map((item, index) => (
                     <div key={item.id} className="relative w-full h-full flex-shrink-0">
-                        {item.image_url ? (
-                            <>
-                                {/* Blurred Background Layer */}
-                                <div className="absolute inset-0">
-                                    <img
-                                        src={item.image_url}
-                                        alt=""
-                                        className="w-full h-full object-cover blur-xl opacity-50 scale-110"
-                                    />
-                                </div>
-                                {/* Main Image Layer */}
-                                <img
-                                    src={item.image_url}
-                                    alt={item.title}
-                                    className="relative w-full h-full object-contain z-10"
-                                />
-                            </>
+                        {item.link_url ? (
+                            <a href={item.link_url} aria-label={item.title || "Go to link"} className="block w-full h-full relative group cursor-pointer">
+                                <CarouselContent item={item} index={index} />
+                            </a>
                         ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-pink-400 to-purple-600"></div>
-                        )}
-
-                        {/* Overlay & Content - Only show if there is content */}
-                        {(item.title || item.description || item.link_url) && (
-                            <>
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent z-20"></div>
-                                <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12 text-white z-30">
-                                    {item.title && (
-                                        <h2 className="text-3xl md:text-5xl font-bold mb-4 drop-shadow-lg">
-                                            {item.title}
-                                        </h2>
-                                    )}
-                                    {item.description && (
-                                        <p className="text-lg md:text-xl mb-6 max-w-2xl drop-shadow-md">
-                                            {item.description}
-                                        </p>
-                                    )}
-                                    {item.link_url && (
-                                        <a
-                                            href={item.link_url}
-                                            className="inline-block px-8 py-3 bg-pink-500 hover:bg-pink-600 text-white font-semibold rounded-lg transition-all transform hover:scale-105 shadow-lg"
-                                        >
-                                            Saiba Mais
-                                        </a>
-                                    )}
-                                </div>
-                            </>
+                            <div className="w-full h-full relative">
+                                <CarouselContent item={item} index={index} />
+                            </div>
                         )}
                     </div>
                 ))}
@@ -163,12 +143,15 @@ export default function ProductCarousel({ autoPlayInterval = 5000, showIndicator
                         <button
                             key={index}
                             onClick={() => goToIndex(index)}
-                            className={`w-2 h-2 md:w-3 md:h-3 rounded-full transition-all ${index === currentIndex
+                            className="p-2"
+                            aria-label={`Go to slide ${index + 1}`}
+                        >
+                            <div className={`w-2 h-2 md:w-3 md:h-3 rounded-full transition-all ${index === currentIndex
                                 ? 'bg-white w-8 md:w-12'
                                 : 'bg-white/50 hover:bg-white/75'
                                 }`}
-                            aria-label={`Go to slide ${index + 1}`}
-                        />
+                            />
+                        </button>
                     ))}
                 </div>
             )}

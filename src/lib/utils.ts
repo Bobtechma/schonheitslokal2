@@ -9,7 +9,9 @@ export function formatCurrency(amount: number): string {
   return `${amount.toFixed(2)}.-`
 }
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date: string | Date | null | undefined): string {
+  if (!date) return '-'
+  
   let d: Date;
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
     const [year, month, day] = date.split('-').map(Number);
@@ -18,6 +20,8 @@ export function formatDate(date: string | Date): string {
     d = new Date(date);
   }
 
+  if (isNaN(d.getTime())) return '-'
+
   return new Intl.DateTimeFormat('de-CH', {
     day: '2-digit',
     month: '2-digit',
@@ -25,28 +29,43 @@ export function formatDate(date: string | Date): string {
   }).format(d)
 }
 
-export function formatTime(time: string): string {
-  return new Intl.DateTimeFormat('de-CH', {
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(`2000-01-01T${time}`))
-}
+export function formatTime(time: string | null | undefined): string {
+  if (!time) return '-'
+  
+  try {
+    const d = new Date(`2000-01-01T${time}`)
+    if (isNaN(d.getTime())) return time.slice(0, 5) // Fallback to raw slice if possible
 
-export function formatDateTime(date: string | Date, time?: string): string {
-  if (date instanceof Date) {
-    const d = date
-    const dateStr = new Intl.DateTimeFormat('de-CH', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    }).format(d)
-    const timeStr = new Intl.DateTimeFormat('de-CH', {
+    return new Intl.DateTimeFormat('de-CH', {
       hour: '2-digit',
       minute: '2-digit'
     }).format(d)
-    return `${dateStr} um ${timeStr} Uhr`
+  } catch (e) {
+    return time.slice(0, 5)
   }
-  return `${formatDate(date)} um ${formatTime(time!)} Uhr`
+}
+
+export function formatDateTime(date: string | Date | null | undefined, time?: string): string {
+  if (!date) return '-'
+
+  const d = date instanceof Date ? date : new Date(date)
+  
+  if (isNaN(d.getTime())) {
+    return `${formatDate(date)}${time ? ` um ${formatTime(time)} Uhr` : ''}`
+  }
+
+  const dateStr = new Intl.DateTimeFormat('de-CH', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(d)
+  
+  const timeStr = new Intl.DateTimeFormat('de-CH', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(d)
+  
+  return `${dateStr} um ${timeStr} Uhr`
 }
 
 export function getDurationText(minutes: number): string {
@@ -168,4 +187,12 @@ export function getInitials(name: string): string {
   if (words.length === 0) return ''
   if (words.length === 1) return words[0].charAt(0).toUpperCase()
   return `${words[0].charAt(0)}${words[words.length - 1].charAt(0)}`.toUpperCase()
+}
+
+export function optimizeImage(url: string | null | undefined, width: number = 800, quality: number = 80): string | undefined {
+  if (!url) return undefined;
+  if (url.includes('/storage/v1/object/public/')) {
+    return url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/') + `?width=${width}&quality=${quality}&resize=contain`;
+  }
+  return url;
 }

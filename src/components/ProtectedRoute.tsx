@@ -5,8 +5,8 @@ import { Loader2 } from 'lucide-react'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
-  requiredRole?: 'client' | 'admin' | 'owner'
-  requiredRoles?: Array<'client' | 'admin' | 'owner'>
+  requiredRole?: 'client' | 'admin' | 'owner' | 'partner'
+  requiredRoles?: Array<'client' | 'admin' | 'owner' | 'partner'>
   redirectTo?: string
 }
 
@@ -23,14 +23,13 @@ export default function ProtectedRoute({
 
   useEffect(() => {
     const checkAuth = async () => {
-      if (!isAuthenticated && !user) {
-        await checkSession()
-      }
+      // Always check session on mount to ensure JWT is fresh (proactive refresh)
+      await checkSession()
       setChecking(false)
     }
     
     checkAuth()
-  }, [isAuthenticated, user, checkSession])
+  }, [checkSession])
 
   if (isLoading || checking) {
     return (
@@ -66,7 +65,8 @@ export default function ProtectedRoute({
   if (!hasRequiredRole()) {
     // User doesn't have the required role
     const requiredRoleText = requiredRole === 'admin' ? 'Administratoren' : 
-                           requiredRole === 'owner' ? 'Eigentümer' : 'Kunden'
+                           requiredRole === 'owner' ? 'Eigentümer' : 
+                           requiredRole === 'partner' ? 'Partner-Salons' : 'Kunden'
     
     return (
       <div className="min-h-screen flex items-center justify-center">

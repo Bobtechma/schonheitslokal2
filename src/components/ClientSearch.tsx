@@ -48,13 +48,39 @@ export default function ClientSearch({ onSelect, onQueryChange, label, placehold
 
             setLoading(true)
             try {
-                const { data, error } = await supabase
+                // Search by name first, then email, then phone
+                const searchTerm = `%${query}%`
+                let existingClients: any[] = []
+
+                const { data: byName } = await supabase
                     .from('clients')
                     .select('*')
-                    .or(`full_name.ilike.%${query}%,email.ilike.%${query}%,phone.ilike.%${query}%`)
+                    .ilike('full_name', searchTerm)
                     .limit(5)
+                
+                if (byName && byName.length > 0) {
+                    existingClients = byName
+                } else {
+                    const { data: byEmail } = await supabase
+                        .from('clients')
+                        .select('*')
+                        .ilike('email', searchTerm)
+                        .limit(5)
+                    
+                    if (byEmail && byEmail.length > 0) {
+                        existingClients = byEmail
+                    } else {
+                        const { data: byPhone } = await supabase
+                            .from('clients')
+                            .select('*')
+                            .ilike('phone', searchTerm)
+                            .limit(5)
+                        
+                        existingClients = byPhone || []
+                    }
+                }
 
-                if (error) throw error
+                const data = existingClients
                 setResults(data || [])
                 setIsOpen(true)
             } catch (error) {

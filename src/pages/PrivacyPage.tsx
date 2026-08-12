@@ -1,8 +1,24 @@
+import { useEffect } from 'react'
 import Header from '@/components/Header'
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useLanguageStore } from '@/stores/languageStore'
+import { updateMetaTags } from '@/lib/seo'
 
 export default function PrivacyPage() {
+    const { language } = useLanguageStore()
+
+    useEffect(() => {
+        const title = language === 'pt-BR' 
+            ? 'Política de Privacidade | Schönheits Lokal' 
+            : 'Datenschutzerklärung | Schönheits Lokal';
+        const description = language === 'pt-BR'
+            ? 'Política de privacidade do Schönheits Lokal. Saiba como protegemos seus dados pessoais de acordo com a lei federal de proteção de dados da Suíça (revDSG).'
+            : 'Datenschutzerklärung von Schönheits Lokal. Erfahren Sie, wie wir Ihre persönlichen Daten in Übereinstimmung mit dem Schweizer DSG schützen.';
+        
+        updateMetaTags(title, description, '/privacidade', language);
+    }, [language]);
+
     return (
         <div className="min-h-screen bg-gray-50">
             <Header />
@@ -76,8 +92,8 @@ export default function PrivacyPage() {
                             </p>
                             <div className="mt-2 p-4 bg-gray-50 rounded-lg">
                                 <p className="font-medium">SchönheitsLokal</p>
-                                <p>Kalkbreitestrasse 129</p>
-                                <p>8003 Zürich</p>
+                                <p>Kalkbreitstrasse 129</p>
+                                <p>8003 Zurich</p>
                                 <p>E-Mail: schonheitlokal@gmail.com</p>
                             </div>
                         </section>

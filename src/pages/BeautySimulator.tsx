@@ -7,6 +7,8 @@ import { generateMockup, generateAsset } from '@/services/geminiService';
 import { Asset, GeneratedMockup, LoadingState, PlacedLayer } from '@/types/simulator';
 import { useApiKey } from '@/hooks/useApiKey';
 import ApiKeyDialog from '@/components/ApiKeyDialog';
+import { useLanguageStore } from '@/stores/languageStore';
+import { updateMetaTags } from '@/lib/seo';
 
 // --- Custom Cursor Component (Pink Hairdryer) ---
 const HairdryerCursor = () => {
@@ -99,6 +101,19 @@ const IntroSequence = ({ onComplete }: { onComplete: () => void }) => {
 
 // --- Main Component ---
 export default function BeautySimulator() {
+    const { language } = useLanguageStore();
+
+    useEffect(() => {
+        const title = language === 'pt-BR' 
+            ? 'Simulador de Beleza IA | Visuel IA Schönheits Lokal' 
+            : 'AI Beauty Simulator | Visuel IA Schönheits Lokal';
+        const description = language === 'pt-BR'
+            ? 'Teste novos cortes de cabelo e maquiagem virtualmente com nosso Simulador de Beleza Inteligência Artificial. Encontre o look ideal em Zurique.'
+            : 'Testen Sie Frisuren und Make-up virtuell mit unserem Visuel IA Beauty Simulator. Finden Sie den perfekten Look für Ihren Termin in Zürich.';
+        
+        updateMetaTags(title, description, '/simulator', language);
+    }, [language]);
+
     const [showIntro, setShowIntro] = useState(true);
 
     // State for Simplified Flow

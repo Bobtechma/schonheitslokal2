@@ -64,8 +64,12 @@ export interface Database {
           duration_minutes: number
           price: number
           category: string | null
+          image_url: string | null
           active: boolean | null
           display_order: number | null
+          stock: number | null
+          weight: number | null
+          subcategory: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -76,8 +80,12 @@ export interface Database {
           duration_minutes: number
           price: number
           category?: string | null
+          image_url?: string | null
           active?: boolean | null
           display_order?: number | null
+          stock?: number | null
+          weight?: number | null
+          subcategory?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -88,8 +96,12 @@ export interface Database {
           duration_minutes?: number
           price?: number
           category?: string | null
+          image_url?: string | null
           active?: boolean | null
           display_order?: number | null
+          stock?: number | null
+          weight?: number | null
+          subcategory?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -104,6 +116,9 @@ export interface Database {
           total_duration_minutes: number
           total_price: number
           status: 'confirmed' | 'completed' | 'cancelled' | 'no_show'
+          payment_method?: 'credit_card' | 'twint' | 'bank_transfer' | 'salon' | null
+          payment_status?: 'pending' | 'paid' | 'failed'
+          stripe_payment_intent_id?: string | null
           notes: string | null
           cancellation_reason: string | null
           created_at: string | null
@@ -119,6 +134,9 @@ export interface Database {
           total_duration_minutes: number
           total_price: number
           status?: 'confirmed' | 'completed' | 'cancelled' | 'no_show'
+          payment_method?: 'credit_card' | 'twint' | 'bank_transfer' | 'salon' | null
+          payment_status?: 'pending' | 'paid' | 'failed'
+          stripe_payment_intent_id?: string | null
           notes?: string | null
           cancellation_reason?: string | null
           created_at?: string | null
@@ -134,6 +152,9 @@ export interface Database {
           total_duration_minutes?: number
           total_price?: number
           status?: 'confirmed' | 'completed' | 'cancelled' | 'no_show'
+          payment_method?: 'credit_card' | 'twint' | 'bank_transfer' | 'salon' | null
+          payment_status?: 'pending' | 'paid' | 'failed'
+          stripe_payment_intent_id?: string | null
           notes?: string | null
           cancellation_reason?: string | null
           created_at?: string | null
@@ -289,6 +310,58 @@ export interface Database {
           end_time?: string
           reason?: string | null
           created_by?: string | null
+          created_at?: string | null
+        }
+      }
+      professionals: {
+        Row: {
+          id: string
+          name: string
+          photo_url: string | null
+          bio: string | null
+          active: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          photo_url?: string | null
+          bio?: string | null
+          active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          photo_url?: string | null
+          bio?: string | null
+          active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      shipping_options: {
+        Row: {
+          id: string
+          name: string
+          price: number
+          active: boolean | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          price: number
+          active?: boolean | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          price?: number
+          active?: boolean | null
           created_at?: string | null
         }
       }
